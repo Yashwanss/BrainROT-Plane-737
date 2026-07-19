@@ -29,6 +29,7 @@ BUTTON = (246, 247, 251)
 BUTTON_HOVER = (255, 229, 184)
 TEXT_DIM = (195, 205, 230)
 PANEL_TEXT = (140, 110, 80)
+AWS_ORANGE = (163, 0, 255) 
 
 STATE_MENU = "MENU"
 STATE_GET_READY = "GET_READY"
@@ -58,7 +59,7 @@ THEMES = {
 }
 PLANE_COLORS = ["Blue", "Green", "Red", "Yellow"]
 
-PIPE_SPACING      = 500
+PIPE_SPACING      = 350
 PIPE_WIDTH        = 90
 GROUND_HEIGHT     = 71
 PLAYABLE_H        = HEIGHT - GROUND_HEIGHT
@@ -66,7 +67,7 @@ GAP_MIN           = 175
 GAP_MAX           = 235
 GAP_MARGIN        = 80
 MAX_GAP_SHIFT     = 90
-STAR_SPAWN_CHANCE = 0.35
+STAR_SPAWN_CHANCE = 0.65
 
 
 def ensure_assets_dir():
@@ -413,6 +414,7 @@ def main():
     quiz_feedback_timer = 0
     invulnerable_timer  = 0
     game_over_timer     = 0
+    credits_scroll_y    = 0.0   # float for smooth sub-pixel scrolling
 
     start_button   = pygame.Rect(WIDTH // 2 - 150, HEIGHT // 2 - 10,  300, 58)
     credits_button = pygame.Rect(WIDTH // 2 - 150, HEIGHT // 2 + 66,  300, 58)
@@ -450,13 +452,14 @@ def main():
         nonlocal bird, pipes, stars, score, time_survived_ms, current_speed
         nonlocal typed_text, current_word, current_meaning, state
         nonlocal quiz_feedback_text, quiz_feedback_timer, invulnerable_timer, game_over_timer
+        nonlocal credits_scroll_y
         load_theme(random.choice(list(THEMES.keys())))
         level_gen.reset()
         bird.reset(); pipes = []; stars = []
         score = 0; time_survived_ms = 0; current_speed = base_speed
         typed_text = ""; current_word = ""; current_meaning = ""
         quiz_feedback_text = ""; quiz_feedback_timer = 0
-        invulnerable_timer = 0; game_over_timer = 0
+        invulnerable_timer = 0; game_over_timer = 0; credits_scroll_y = 0.0
         for _ in range(4): spawn_pipe()
         state = start_state
 
@@ -488,7 +491,7 @@ def main():
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     mp = imouse(event)
                     if start_button.collidepoint(mp):   reset_game(STATE_GET_READY)
-                    elif credits_button.collidepoint(mp): state = STATE_CREDITS
+                    elif credits_button.collidepoint(mp): credits_scroll_y = 0.0; state = STATE_CREDITS
             elif state == STATE_CREDITS:
                 if event.type in (pygame.MOUSEBUTTONDOWN, pygame.KEYDOWN): state = STATE_MENU
             elif state == STATE_GET_READY:
@@ -593,10 +596,18 @@ def main():
 
         if state == STATE_MENU:
             ov = pygame.Surface((WIDTH,HEIGHT),pygame.SRCALPHA); ov.fill((6,10,25,90)); canvas.blit(ov,(0,0))
-            t = fonts["menu_title"].render("AWS CLOUD CLUB", True, WHITE)
+
+            
+            aws_w = fonts["menu_title"].render("AWS ", True, AWS_ORANGE)
+            rest_w = fonts["menu_title"].render("CLOUD CLUB", True, WHITE)
+            total_w = aws_w.get_width() + rest_w.get_width()
+            tx = WIDTH // 2 - total_w // 2
+            ty = 112
+            canvas.blit(aws_w,  (tx, ty))
+            canvas.blit(rest_w, (tx + aws_w.get_width(), ty))
+
             s = fonts["title"].render("BRAINROT BIRDIE", True, ORANGE)
-            canvas.blit(t,(WIDTH//2-t.get_width()//2,112))
-            canvas.blit(s,(WIDTH//2-s.get_width()//2,186))
+            canvas.blit(s,(WIDTH//2-s.get_width()//2,156))
             mp = to_internal(pygame.mouse.get_pos(),viewport) if pygame.mouse.get_focused() else None
             draw_button(canvas, start_button,   "START",   fonts, button_image, mp)
             draw_button(canvas, credits_button, "CREDITS", fonts, button_image, mp)
@@ -604,15 +615,163 @@ def main():
             canvas.blit(footer,(24,HEIGHT-34))
 
         elif state == STATE_CREDITS:
-            ov = pygame.Surface((WIDTH,HEIGHT),pygame.SRCALPHA); ov.fill((6,10,25,220)); canvas.blit(ov,(0,0))
-            p = pygame.Rect(WIDTH//2-330,HEIGHT//2-180,660,360)
-            if ui_bg_image: canvas.blit(ui_bg_image,(p.left,p.top))
-            else: pygame.draw.rect(canvas,PANEL,p,border_radius=28)
-            t = fonts["menu_title"].render("CREDITS",True,WHITE)
-            canvas.blit(t,(WIDTH//2-t.get_width()//2,p.top+26))
-            draw_centered_lines(canvas,["Created for the AWS Cloud Club Expo stall.",
-                "Built as a high-energy Flappy Bird quiz game.","Click anywhere to return."],
-                fonts["body"],PANEL_TEXT,WIDTH//2 - 12,p.top+118,14)
+            # Pure black background for cinematic credits feel
+            canvas.fill((0, 0, 0))
+
+            SCROLL_SPEED = 0.9   # pixels per frame
+            BG_COL       = (0, 0, 0)
+            HDR_COL      = (255, 153, 0)   # AWS orange for section headers
+            NAME_COL     = (255, 255, 255) # bright white for names
+            ROLE_COL     = (180, 185, 200) # soft grey for roles
+            DIVIDER_COL  = (60, 65, 80)
+
+            # ── Credit data ─────────────────────────────────────────────────
+            # Each item is either:
+            #   ("HEADER", "Section Title")       – centred section heading
+            #   ("ENTRY",  "Name", "Role")        – two-column name | role
+            #   ("SPACER", height)                – vertical gap
+            #   ("CENTER", "text", color)         – centred one-liner
+            CREDIT_DATA = [
+                ("SPACER", 40),
+                ("HEADER", "BRAINROT BIRDIE"),
+                ("CENTER", "A Brainrot-themed endless flyer", ROLE_COL),
+                ("SPACER", 36),
+
+                ("HEADER", "Created By"),
+                ("ENTRY",  "Yashwanth K",          "Game Creator"),
+                ("ENTRY",  "Yashwanth K",          "Game Design"),
+                ("ENTRY",  "Yashwanth K",          "Programming"),
+                ("ENTRY",  "Yashwanth K",          "Game Systems"),
+                ("ENTRY",  "Yashwanth K",          "Level Design"),
+                ("ENTRY",  "Yashwanth K",          "UI Design"),
+                ("SPACER", 32),
+
+                ("HEADER", "Art & Assets"),
+                ("ENTRY",  "Kenney.nl",             "Pixel Art"),
+                ("ENTRY",  "Kenney.nl",             "Character Sprites"),
+                ("ENTRY",  "Kenney.nl",             "Environment Art"),
+                ("ENTRY",  "Kenney.nl",             "Animations"),
+                ("SPACER", 32),
+
+                ("HEADER", "Special Thanks"),
+                ("ENTRY",  "AWS Cloud Club VITC",  "Community & Support"),
+                ("SPACER", 32),
+
+                # ("HEADER", "Built With"),
+                # ("ENTRY",  "Python 3",             "Language"),
+                # ("ENTRY",  "Pygame-CE",            "Game Framework"),
+                # ("SPACER", 48),
+
+                ("CENTER", "© 2026 Yashwanth K", ROLE_COL),
+                ("CENTER", "All Rights Reserved.", ROLE_COL),
+                ("SPACER", 16),
+                ("CENTER", "Thank you for playing!", HDR_COL),
+                ("SPACER", 80),
+            ]
+
+            # ── Layout constants ─────────────────────────────────────────────
+            MID          = WIDTH // 2
+            NAME_RIGHT   = MID - 24   # right edge of name column
+            ROLE_LEFT    = MID + 24   # left edge of role column
+            ENTRY_H      = 38
+            HDR_H        = 54
+
+            # ── Build content surface (once per state, but simple enough ────
+            #    to rebuild each frame – no caching needed at 60fps)
+            total_h = 0
+            for item in CREDIT_DATA:
+                if item[0] == "HEADER":
+                    total_h += HDR_H + 8
+                elif item[0] == "ENTRY":
+                    total_h += ENTRY_H
+                elif item[0] == "SPACER":
+                    total_h += item[1]
+                elif item[0] == "CENTER":
+                    total_h += ENTRY_H
+
+            content = pygame.Surface((WIDTH, total_h), pygame.SRCALPHA)
+            cy = 0
+
+            for item in CREDIT_DATA:
+                if item[0] == "HEADER":
+                    # Draw a divider line, then the header text
+                    pygame.draw.line(content, DIVIDER_COL,
+                                     (MID - 260, cy + HDR_H // 2 - 1),
+                                     (MID + 260, cy + HDR_H // 2 - 1), 1)
+                    hdr_s = fonts["subtitle"].render(item[1], True, HDR_COL)
+                    # White background pill behind header text
+                    bg_pad = 18
+                    bg_r = pygame.Rect(MID - hdr_s.get_width()//2 - bg_pad,
+                                       cy + HDR_H//2 - hdr_s.get_height()//2 - 2,
+                                       hdr_s.get_width() + bg_pad*2, hdr_s.get_height() + 4)
+                    pygame.draw.rect(content, BG_COL, bg_r)
+                    content.blit(hdr_s, (MID - hdr_s.get_width()//2, cy + HDR_H//2 - hdr_s.get_height()//2))
+                    cy += HDR_H + 8
+
+                elif item[0] == "ENTRY":
+                    _, name, role = item
+                    name_s = fonts["body"].render(name, True, NAME_COL)
+                    role_s = fonts["small"].render(role.upper(), True, ROLE_COL)
+                    ey = cy + ENTRY_H // 2
+                    # Name right-aligned to centre
+                    content.blit(name_s, (NAME_RIGHT - name_s.get_width(),
+                                          ey - name_s.get_height() // 2))
+                    # Role left-aligned from centre
+                    content.blit(role_s, (ROLE_LEFT,
+                                          ey - role_s.get_height() // 2))
+                    cy += ENTRY_H
+
+                elif item[0] == "SPACER":
+                    cy += item[1]
+
+                elif item[0] == "CENTER":
+                    _, text, color = item
+                    ts = fonts["small"].render(text, True, color)
+                    content.blit(ts, (MID - ts.get_width()//2, cy + ENTRY_H//2 - ts.get_height()//2))
+                    cy += ENTRY_H
+
+            # ── Scroll ───────────────────────────────────────────────────────
+            credits_scroll_y += SCROLL_SPEED
+            if credits_scroll_y >= total_h:
+                credits_scroll_y = 0.0
+
+            sy = int(credits_scroll_y)
+            SCROLL_TOP    = 72
+            SCROLL_BOTTOM = HEIGHT - 34
+            view_h = SCROLL_BOTTOM - SCROLL_TOP
+
+            scroll_surf = pygame.Surface((WIDTH, view_h))
+            scroll_surf.fill(BG_COL)
+            scroll_surf.blit(content, (0, -sy))
+            if sy + view_h > total_h:
+                scroll_surf.blit(content, (0, total_h - sy))
+
+            # Fade top and bottom 60px
+            FADE_H = 60
+            for i in range(FADE_H):
+                a_top = int(255 * (1 - i / FADE_H))
+                a_bot = int(255 * (i / FADE_H))
+                fade_top = pygame.Surface((WIDTH, 1)); fade_top.fill(BG_COL); fade_top.set_alpha(a_top)
+                fade_bot = pygame.Surface((WIDTH, 1)); fade_bot.fill(BG_COL); fade_bot.set_alpha(a_bot)
+                scroll_surf.blit(fade_top, (0, i))
+                scroll_surf.blit(fade_bot, (0, view_h - FADE_H + i))
+
+            canvas.blit(scroll_surf, (0, SCROLL_TOP))
+
+            # ── Fixed header bar ─────────────────────────────────────────────
+            pygame.draw.rect(canvas, BG_COL, (0, 0, WIDTH, SCROLL_TOP))
+            aws_h  = fonts["menu_title"].render("AWS", True, (255, 153, 0))
+            rest_h = fonts["menu_title"].render("CLOUD CLUB — CREDITS", True, WHITE)
+            total_tw = aws_h.get_width() + rest_h.get_width()
+            tx = MID - total_tw // 2
+            canvas.blit(aws_h,  (tx, 14))
+            canvas.blit(rest_h, (tx + aws_h.get_width(), 14))
+            pygame.draw.line(canvas, DIVIDER_COL, (0, SCROLL_TOP - 1), (WIDTH, SCROLL_TOP - 1), 1)
+
+            # ── Fixed hint bar ───────────────────────────────────────────────
+            pygame.draw.rect(canvas, BG_COL, (0, SCROLL_BOTTOM, WIDTH, HEIGHT - SCROLL_BOTTOM))
+            hint = fonts["small"].render("Click or press any key to return", True, (90, 100, 120))
+            canvas.blit(hint, (MID - hint.get_width()//2, SCROLL_BOTTOM + 8))
 
         elif state == STATE_GET_READY:
             if get_ready_image: canvas.blit(get_ready_image,(WIDTH//2-get_ready_image.get_width()//2,HEIGHT//3-50))
