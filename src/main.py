@@ -118,7 +118,7 @@ def load_fonts():
     standard_font = pygame.font.SysFont("segoe ui", 16)
     if os.path.exists(font_path):
         return {
-            "logo":       pygame.font.Font(font_path, 36),
+            "logo":       pygame.font.Font(font_path, 50),
             "menu_title": pygame.font.Font(font_path, 20),
             "title":      pygame.font.Font(font_path, 26),
             "subtitle":   pygame.font.Font(font_path, 14),
@@ -400,7 +400,13 @@ def main():
     ensure_assets_dir()
     global window
     window = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
-    pygame.display.set_caption("Brainrot Tappy")
+    pygame.display.set_caption("BrainROT Plane 737")
+    # Set window / taskbar icon
+    _icon_path = os.path.join(ASSETS_DIR, "aws cloud club.png")
+    if os.path.exists(_icon_path):
+        _icon = pygame.image.load(_icon_path).convert_alpha()
+        _icon = pygame.transform.smoothscale(_icon, (64, 64))
+        pygame.display.set_icon(_icon)
     clock  = pygame.time.Clock()
     canvas = pygame.Surface((WIDTH, HEIGHT))
     fonts  = load_fonts()
@@ -410,7 +416,7 @@ def main():
     tap_image       = load_png_image("UI/tap.png",          WHITE,  (60,  60))
     ui_bg_image     = load_png_image("UI/UIbg.png",         PANEL,  (660, 360))
 
-    # Collectible item pool — all scaled to the same 40×40 size
+    # collectibles pool size to 40,40
     _SZ = (40, 40)
     def _load(path, fallback=ORANGE):
         p = os.path.join(ASSETS_DIR, path)
@@ -437,6 +443,16 @@ def main():
         _load_puff("puffLarge.png", (52, 52)),
         _load_puff("puffSmall.png", (30, 30)),
     ]
+
+    # Menu logo (smaller display version, aspect-ratio preserved)
+    _ml_path = os.path.join(ASSETS_DIR, "aws cloud club.png")
+    if os.path.exists(_ml_path):
+        _ml_raw     = pygame.image.load(_ml_path).convert_alpha()
+        _ml_w       = 110
+        _ml_h       = int(_ml_raw.get_height() * _ml_w / max(1, _ml_raw.get_width()))
+        menu_logo   = pygame.transform.smoothscale(_ml_raw, (_ml_w, _ml_h))
+    else:
+        menu_logo = None
 
 
     number_images = []
@@ -716,13 +732,19 @@ def main():
         if state == STATE_MENU:
             ov = pygame.Surface((WIDTH,HEIGHT),pygame.SRCALPHA); ov.fill((6,10,25,90)); canvas.blit(ov,(0,0))
 
-            # title text 
+            # title text
             aws_s  = fonts["logo"].render("AWS CLOUD CLUB", True, AWS_ORANGE)
-            game_s = fonts["menu_title"].render("TAPPY BRAINROT", True, ORANGE)
-            # Stack them centred, with a small gap between
-            block_top = HEIGHT // 2 - 180
-            canvas.blit(aws_s,  (WIDTH // 2 - aws_s.get_width()  // 2, block_top))
-            canvas.blit(game_s, (WIDTH // 2 - game_s.get_width() // 2, block_top + aws_s.get_height() + 18))
+            game_s = fonts["menu_title"].render("BrainROT Plane 737", True, ORANGE)
+            # Build the full block: logo + AWS text + game title
+            logo_h     = menu_logo.get_height() + 12 if menu_logo else 0
+            total_h    = logo_h + aws_s.get_height() + 14 + game_s.get_height()
+            block_top  = start_button.top - total_h - 24
+            # Logo above text
+            if menu_logo:
+                canvas.blit(menu_logo, (WIDTH // 2 - menu_logo.get_width() // 2, block_top))
+            text_top = block_top + logo_h
+            canvas.blit(aws_s,  (WIDTH // 2 - aws_s.get_width()  // 2, text_top))
+            canvas.blit(game_s, (WIDTH // 2 - game_s.get_width() // 2, text_top + aws_s.get_height() + 14))
 
             mp = to_internal(pygame.mouse.get_pos(),viewport) if pygame.mouse.get_focused() else None
             draw_button(canvas, start_button,   "START",   fonts, button_image, mp)
@@ -749,8 +771,8 @@ def main():
             #   ("CENTER", "text", color)         – centred one-liner
             CREDIT_DATA = [
                 ("SPACER", 40),
-                ("HEADER", "TAPPY PLANE"),
-                # ("CENTER", "A Brainrot-themed endless flyer", ROLE_COL),
+                ("HEADER", "BrainROT Plane 737"),
+                ("CENTER", "A Boring and very used idea for a 2D platformer #BrainrotTogether", ROLE_COL),
                 ("SPACER", 36),
 
                 ("HEADER", "Created By"),
