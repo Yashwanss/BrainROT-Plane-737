@@ -1,3 +1,4 @@
+import csv
 import os
 import random
 import sys
@@ -38,18 +39,33 @@ STATE_PLAYING = "PLAYING"
 STATE_QUIZ = "QUIZ"
 STATE_GAME_OVER = "GAME_OVER"
 
-BRAINROT_WORDS = [
-    {"word": "rizz", "meaning": "Charisma or ability to attract"},
-    {"word": "cap", "meaning": "A lie or fake"},
-    {"word": "sigma", "meaning": "A lone wolf, successful and cool"},
-    {"word": "gyatt", "meaning": "Exclamation for a large posterior"},
-    {"word": "mewing", "meaning": "Tongue posture to improve jawline"},
-    {"word": "ohio", "meaning": "Crazy, chaotic, or weird place"},
-    {"word": "slay", "meaning": "To do something impressively well"},
-    {"word": "bussin", "meaning": "Extremely good, especially food"},
-    {"word": "no cap", "meaning": "Seriously, for real"},
-    {"word": "lowkey", "meaning": "Quietly or secretly; kind of"},
-]
+def _load_brainrot_words():
+    """Load word/meaning pairs from the dataset CSV, falling back to builtins."""
+    csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "..", "assets", "dataset", "internet_slang_dictionary.csv")
+    csv_path = os.path.normpath(csv_path)
+    words = []
+    if os.path.exists(csv_path):
+        with open(csv_path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                w = row.get("word", "").strip()
+                m = row.get("meaning", "").strip()
+                if w and m:
+                    words.append({"word": w, "meaning": m})
+    if not words:   # fallback if CSV missing or empty
+        words = [
+            {"word": "rizz",   "meaning": "Charisma or ability to attract"},
+            {"word": "cap",    "meaning": "A lie or fake"},
+            {"word": "sigma",  "meaning": "A lone wolf, successful and cool"},
+            {"word": "gyatt",  "meaning": "Exclamation for a large posterior"},
+            {"word": "mewing", "meaning": "Tongue posture to improve jawline"},
+            {"word": "slay",   "meaning": "To do something impressively well"},
+            {"word": "bussin", "meaning": "Extremely good, especially food"},
+        ]
+    return words
+
+BRAINROT_WORDS = _load_brainrot_words()
 
 THEMES = {
     "grass": {"ground": "groundGrass.png", "rock_up": "rockGrass.png",    "rock_down": "rockGrassDown.png"},
@@ -59,14 +75,14 @@ THEMES = {
 }
 PLANE_COLORS = ["Blue", "Green", "Red", "Yellow"]
 
-PIPE_SPACING      = 350
+PIPE_SPACING      = 340   # base — actual spacing is randomised in spawn_pipe()
 PIPE_WIDTH        = 90
 GROUND_HEIGHT     = 71
 PLAYABLE_H        = HEIGHT - GROUND_HEIGHT
-GAP_MIN           = 175
-GAP_MAX           = 235
+GAP_MIN           = 155
+GAP_MAX           = 215
 GAP_MARGIN        = 80
-MAX_GAP_SHIFT     = 90
+MAX_GAP_SHIFT     = 140
 STAR_SPAWN_CHANCE = 0.65
 
 
@@ -94,21 +110,30 @@ def load_plane_frames(color):
 
 
 def load_fonts():
-    font_path = os.path.join(ASSETS_DIR, "font.ttf")
+    font_path = os.path.join(ASSETS_DIR, "fonts", "PressStart2P-Regular.ttf")
+    if not os.path.exists(font_path):
+        # Legacy fallback: old single font.ttf location
+        font_path = os.path.join(ASSETS_DIR, "font.ttf")
+    # "standard" always uses a clean proportional system font (e.g. footer text)
+    standard_font = pygame.font.SysFont("segoe ui", 16)
     if os.path.exists(font_path):
         return {
-            "menu_title": pygame.font.Font(font_path, 40),
-            "title":      pygame.font.Font(font_path, 56),
-            "subtitle":   pygame.font.Font(font_path, 28),
-            "body":       pygame.font.Font(font_path, 26),
-            "small":      pygame.font.Font(font_path, 18),
+            "logo":       pygame.font.Font(font_path, 36),
+            "menu_title": pygame.font.Font(font_path, 20),
+            "title":      pygame.font.Font(font_path, 26),
+            "subtitle":   pygame.font.Font(font_path, 14),
+            "body":       pygame.font.Font(font_path, 12),
+            "small":      pygame.font.Font(font_path, 9),
+            "standard":   standard_font,
         }
     return {
+        "logo":       pygame.font.SysFont("georgia",  72, bold=True),
         "menu_title": pygame.font.SysFont("georgia",  40, bold=True),
         "title":      pygame.font.SysFont("georgia",  56, bold=True),
         "subtitle":   pygame.font.SysFont("segoe ui", 28, bold=True),
         "body":       pygame.font.SysFont("segoe ui", 26),
         "small":      pygame.font.SysFont("segoe ui", 18),
+        "standard":   standard_font,
     }
 
 
@@ -334,33 +359,34 @@ def draw_score(surface, score_val, x_center, y, number_images):
 class LevelGenerator:
     """
     Generates consistent pipe positions:
-    - Fixed horizontal spacing for rhythm.
+    - Horizontal spacing is randomised per-pipe for an erratic feel.
     - Gap center drifts by at most MAX_GAP_SHIFT between consecutive pipes.
     - Gap size shrinks with score (difficulty scaling).
     - Stars placed inside the gap near centre.
     """
     def __init__(self):
         self.last_center = PLAYABLE_H // 2
-        self.last_x      = WIDTH + 140
 
     def reset(self):
         self.last_center = PLAYABLE_H // 2
-        self.last_x      = WIDTH + 140
 
     def gap_size(self, score):
         return max(GAP_MIN, GAP_MAX - (score // 5) * 10)
 
     def next_pipe(self, score):
+        """Return (gap_center_y, gap_size) only — x is computed by spawn_pipe()."""
         gsz  = self.gap_size(score)
         half = gsz // 2
         y_min = GAP_MARGIN + half
         y_max = PLAYABLE_H - GAP_MARGIN - half
-        drift = random.randint(-MAX_GAP_SHIFT, MAX_GAP_SHIFT)
+        # Occasionally apply a big sudden jump for extra chaos
+        if random.random() < 0.25:
+            drift = random.randint(-MAX_GAP_SHIFT, MAX_GAP_SHIFT) * 2
+        else:
+            drift = random.randint(-MAX_GAP_SHIFT, MAX_GAP_SHIFT)
         center = max(y_min, min(y_max, self.last_center + drift))
         self.last_center = center
-        x = self.last_x
-        self.last_x += PIPE_SPACING
-        return x, center, gsz
+        return center, gsz
 
     def star_in_gap(self, gap_center_y, gap_size):
         half      = gap_size // 2
@@ -374,7 +400,7 @@ def main():
     ensure_assets_dir()
     global window
     window = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
-    pygame.display.set_caption("Tappy Brainrot")
+    pygame.display.set_caption("Brainrot Tappy")
     clock  = pygame.time.Clock()
     canvas = pygame.Surface((WIDTH, HEIGHT))
     fonts  = load_fonts()
@@ -383,7 +409,35 @@ def main():
     get_ready_image = load_png_image("UI/textGetReady.png", ORANGE, (300, 54))
     tap_image       = load_png_image("UI/tap.png",          WHITE,  (60,  60))
     ui_bg_image     = load_png_image("UI/UIbg.png",         PANEL,  (660, 360))
-    star_image      = load_png_image("starGold.png",        ORANGE, (40,  40))
+
+    # Collectible item pool — all scaled to the same 40×40 size
+    _SZ = (40, 40)
+    def _load(path, fallback=ORANGE):
+        p = os.path.join(ASSETS_DIR, path)
+        if os.path.exists(p):
+            return pygame.transform.smoothscale(pygame.image.load(p).convert_alpha(), _SZ)
+        s = pygame.Surface(_SZ, pygame.SRCALPHA); s.fill(fallback); return s
+
+    collectible_images = [
+        _load("PNG/starGold.png",   ORANGE),
+        _load("PNG/starSilver.png", (200, 200, 200)),
+        _load("PNG/starBronze.png", (180, 100, 30)),
+        _load("tunk_tunk.png",      (255, 200, 0)),
+        _load("peach.png",          (255, 180, 120)),
+    ]
+
+    # Puff / exhaust images — different sizes to look natural
+    def _load_puff(name, size):
+        p = os.path.join(ASSETS_DIR, "PNG", name)
+        if os.path.exists(p):
+            return pygame.transform.smoothscale(pygame.image.load(p).convert_alpha(), size)
+        s = pygame.Surface(size, pygame.SRCALPHA); s.fill((220, 220, 220, 180)); return s
+
+    puff_imgs = [
+        _load_puff("puffLarge.png", (52, 52)),
+        _load_puff("puffSmall.png", (30, 30)),
+    ]
+
 
     number_images = []
     for i in range(10):
@@ -400,6 +454,7 @@ def main():
     bird       = Bird()
     pipes      = []
     stars      = []
+    puffs      = []   # exhaust puff particles
     level_gen  = LevelGenerator()
 
     state            = STATE_MENU
@@ -415,6 +470,12 @@ def main():
     invulnerable_timer  = 0
     game_over_timer     = 0
     credits_scroll_y    = 0.0   # float for smooth sub-pixel scrolling
+
+    # ── Menu exit slide animation ────────────────────────────────────────────
+    MENU_EXIT_MS    = 380          # total animation duration in ms
+    menu_exit_surf  = None         # canvas snapshot captured on click
+    menu_exit_timer = -1           # ms elapsed; -1 = inactive
+    menu_exit_target = None        # "start" | "credits"
 
     start_button   = pygame.Rect(WIDTH // 2 - 150, HEIGHT // 2 - 10,  300, 58)
     credits_button = pygame.Rect(WIDTH // 2 - 150, HEIGHT // 2 + 66,  300, 58)
@@ -439,23 +500,29 @@ def main():
         for pipe in pipes: pipe.speed = current_speed
 
     def spawn_pipe():
-        x, cy, gsz = level_gen.next_pipe(score)
+        cy, gsz = level_gen.next_pipe(score)
+        if pipes:
+            spacing = random.randint(350, 500)   # wider gap between consecutive pipes
+            x = int(pipes[-1].x) + spacing
+        else:
+            x = WIDTH + 60
         pipe = Pipe(x, current_speed, cy, gsz)
         pipes.append(pipe)
         if random.random() < STAR_SPAWN_CHANCE:
             sx_rel, sy = level_gen.star_in_gap(cy, gsz)
             sx = x + sx_rel
             sy = max(pipe.top_height + 10, min(pipe.bottom_y - 50, sy))
-            stars.append({"x": float(sx), "rect": pygame.Rect(int(sx), int(sy), 40, 40)})
+            img = random.choice(collectible_images)
+            stars.append({"x": float(sx), "rect": pygame.Rect(int(sx), int(sy), 40, 40), "img": img})
 
     def reset_game(start_state=STATE_PLAYING):
-        nonlocal bird, pipes, stars, score, time_survived_ms, current_speed
+        nonlocal bird, pipes, stars, puffs, score, time_survived_ms, current_speed
         nonlocal typed_text, current_word, current_meaning, state
         nonlocal quiz_feedback_text, quiz_feedback_timer, invulnerable_timer, game_over_timer
         nonlocal credits_scroll_y
         load_theme(random.choice(list(THEMES.keys())))
         level_gen.reset()
-        bird.reset(); pipes = []; stars = []
+        bird.reset(); pipes = []; stars = []; puffs = []
         score = 0; time_survived_ms = 0; current_speed = base_speed
         typed_text = ""; current_word = ""; current_meaning = ""
         quiz_feedback_text = ""; quiz_feedback_timer = 0
@@ -473,6 +540,24 @@ def main():
         nonlocal state, game_over_timer
         state = STATE_GAME_OVER; game_over_timer = 0
 
+    def do_jump():
+        """Jump the bird and emit a puff of exhaust smoke."""
+        bird.jump()
+        # Spawn 1-2 puff sprites at the plane's tail (left side)
+        tail_x = bird.x - 10
+        tail_y = bird.y + bird.height // 2
+        for _ in range(random.randint(1, 2)):
+            img_src = random.choice(puff_imgs)
+            surf    = img_src.copy()   # per-puff copy so alpha is independent
+            puffs.append({
+                "surf":      surf,
+                "x":         float(tail_x - surf.get_width() // 2 + random.randint(-6, 6)),
+                "y":         float(tail_y - surf.get_height() // 2 + random.randint(-8, 8)),
+                "timer":     0,
+                "max_timer": random.randint(320, 480),
+                "dx":        random.uniform(-1.8, -0.4),   # drift backward
+            })
+
     def imouse(event): return to_internal(event.pos, get_viewport(window.get_size()))
 
     reset_game(STATE_MENU)
@@ -487,34 +572,40 @@ def main():
                 window = pygame.display.set_mode((event.w, event.h), pygame.RESIZABLE)
                 viewport = get_viewport(window.get_size())
 
-            if state == STATE_MENU:
+            if state == STATE_MENU and menu_exit_timer < 0:
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     mp = imouse(event)
-                    if start_button.collidepoint(mp):   reset_game(STATE_GET_READY)
-                    elif credits_button.collidepoint(mp): credits_scroll_y = 0.0; state = STATE_CREDITS
+                    if start_button.collidepoint(mp):
+                        menu_exit_surf = canvas.copy()
+                        menu_exit_timer = 0
+                        menu_exit_target = "start"
+                    elif credits_button.collidepoint(mp):
+                        menu_exit_surf = canvas.copy()
+                        menu_exit_timer = 0
+                        menu_exit_target = "credits"
             elif state == STATE_CREDITS:
                 if event.type in (pygame.MOUSEBUTTONDOWN, pygame.KEYDOWN): state = STATE_MENU
             elif state == STATE_GET_READY:
                 if event.type == pygame.KEYDOWN and event.key in (pygame.K_SPACE, pygame.K_RETURN):
-                    bird.jump(); state = STATE_PLAYING
+                    do_jump(); state = STATE_PLAYING
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    bird.jump(); state = STATE_PLAYING
+                    do_jump(); state = STATE_PLAYING
             elif state == STATE_PLAYING:
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE: bird.jump()
-                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1: bird.jump()
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE: do_jump()
+                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1: do_jump()
             elif state == STATE_QUIZ and event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_BACKSPACE:
                     typed_text = typed_text[:-1]
                 elif event.key == pygame.K_SPACE:
                     if typed_text.strip().lower() == current_word:
-                        score += 1; quiz_feedback_text = "CORRECT!"; invulnerable_timer = 1000
+                        score += 1; quiz_feedback_text = "CORRECT!"; invulnerable_timer = 1500
                         if score % 5 == 0:
                             current_speed += 0.5; sync_speed()
                             tl = list(THEMES.keys())
                             load_theme(tl[(tl.index(current_theme_name)+1) % len(tl)])
                     else:
                         current_speed += 0.75; sync_speed()
-                        quiz_feedback_text = "WRONG!"; invulnerable_timer = 0
+                        quiz_feedback_text = "WRONG!"; invulnerable_timer = 750  
                     quiz_feedback_timer = 1000; state = STATE_PLAYING
                 elif event.unicode.isalpha() and len(typed_text) < 20:
                     typed_text += event.unicode
@@ -529,6 +620,18 @@ def main():
 
         scroll = current_speed if state in (STATE_PLAYING, STATE_GET_READY) else 1.0
         if state == STATE_GAME_OVER: game_over_timer += dt
+
+        # Menu exit animation tick
+        if menu_exit_timer >= 0:
+            menu_exit_timer += dt
+            if menu_exit_timer >= MENU_EXIT_MS:
+                if menu_exit_target == "start":
+                    reset_game(STATE_GET_READY)
+                elif menu_exit_target == "credits":
+                    credits_scroll_y = 0.0; state = STATE_CREDITS
+                menu_exit_timer = -1
+                menu_exit_surf  = None
+                menu_exit_target = None
 
         bg_x     -= scroll * 0.15
         if bg_x <= -1200: bg_x += 1200
@@ -562,8 +665,15 @@ def main():
             for star in stars[:]:
                 star["x"] -= current_speed; star["rect"].x = int(star["x"])
                 if bird.rect.colliderect(star["rect"]):
-                    stars.remove(star); score += 2; invulnerable_timer = 1500; start_quiz(); break
+                    stars.remove(star); score += 2; start_quiz(); break
                 if star["x"] + 40 < 0: stars.remove(star)
+
+            # Update exhaust puffs
+            for puff in puffs[:]:
+                puff["timer"] += dt
+                puff["x"]    += puff["dx"] - current_speed
+                if puff["timer"] >= puff["max_timer"]:
+                    puffs.remove(puff)
 
             if pipes and pipes[0].right < -120:
                 pipes.pop(0); spawn_pipe()
@@ -576,7 +686,7 @@ def main():
                 for pipe in pipes:
                     if pipe.collides_with_bird(bsurf, bpos, pipe_top_image, pipe_bottom_image): do_game_over(); break
 
-        # ---- Draw ----
+        # Draw/ bliut
         canvas.blit(background_image, (int(bg_x), 0))
         canvas.blit(background_image, (int(bg_x)+1200, 0))
         canvas.blit(background_image, (int(bg_x)+2400, 0))
@@ -584,48 +694,54 @@ def main():
         if state in (STATE_PLAYING, STATE_QUIZ, STATE_GAME_OVER):
             for pipe in pipes: pipe.draw(canvas, pipe_top_image, pipe_bottom_image)
             for star in stars:
-                if star_image: canvas.blit(star_image, (int(star["rect"].x), int(star["rect"].y)))
-                else: pygame.draw.rect(canvas, ORANGE, star["rect"])
+                img = star.get("img")
+                if img:
+                    canvas.blit(img, (int(star["rect"].x), int(star["rect"].y)))
+                else:
+                    pygame.draw.rect(canvas, ORANGE, star["rect"])
 
         if ground_image is not None:
             for dx in (0, 808, 1616): canvas.blit(ground_image, (int(ground_x)+dx, HEIGHT-GROUND_HEIGHT))
         else:
             pygame.draw.rect(canvas, GREEN, (0, HEIGHT-GROUND_HEIGHT, WIDTH, GROUND_HEIGHT))
 
+        # Draw exhaust puffs behind the bird
+        for puff in puffs:
+            alpha = max(0, int(255 * (1 - puff["timer"] / puff["max_timer"])))
+            puff["surf"].set_alpha(alpha)
+            canvas.blit(puff["surf"], (int(puff["x"]), int(puff["y"])))
+
         if invulnerable_timer == 0 or (pygame.time.get_ticks()//100)%2==0: bird.draw(canvas)
 
         if state == STATE_MENU:
             ov = pygame.Surface((WIDTH,HEIGHT),pygame.SRCALPHA); ov.fill((6,10,25,90)); canvas.blit(ov,(0,0))
 
-            
-            aws_w = fonts["menu_title"].render("AWS ", True, AWS_ORANGE)
-            rest_w = fonts["menu_title"].render("CLOUD CLUB", True, WHITE)
-            total_w = aws_w.get_width() + rest_w.get_width()
-            tx = WIDTH // 2 - total_w // 2
-            ty = 112
-            canvas.blit(aws_w,  (tx, ty))
-            canvas.blit(rest_w, (tx + aws_w.get_width(), ty))
+            # title text 
+            aws_s  = fonts["logo"].render("AWS CLOUD CLUB", True, AWS_ORANGE)
+            game_s = fonts["menu_title"].render("TAPPY BRAINROT", True, ORANGE)
+            # Stack them centred, with a small gap between
+            block_top = HEIGHT // 2 - 180
+            canvas.blit(aws_s,  (WIDTH // 2 - aws_s.get_width()  // 2, block_top))
+            canvas.blit(game_s, (WIDTH // 2 - game_s.get_width() // 2, block_top + aws_s.get_height() + 18))
 
-            s = fonts["title"].render("BRAINROT BIRDIE", True, ORANGE)
-            canvas.blit(s,(WIDTH//2-s.get_width()//2,156))
             mp = to_internal(pygame.mouse.get_pos(),viewport) if pygame.mouse.get_focused() else None
             draw_button(canvas, start_button,   "START",   fonts, button_image, mp)
             draw_button(canvas, credits_button, "CREDITS", fonts, button_image, mp)
-            footer = fonts["small"].render("© 2026 Yashwanth K", True, WHITE)
+            footer = fonts["standard"].render("© 2026 Yashwanth K", True, WHITE)
             canvas.blit(footer,(24,HEIGHT-34))
 
         elif state == STATE_CREDITS:
-            # Pure black background for cinematic credits feel
+            
             canvas.fill((0, 0, 0))
 
-            SCROLL_SPEED = 0.9   # pixels per frame
+            SCROLL_SPEED = 0.9   
             BG_COL       = (0, 0, 0)
-            HDR_COL      = (255, 153, 0)   # AWS orange for section headers
-            NAME_COL     = (255, 255, 255) # bright white for names
-            ROLE_COL     = (180, 185, 200) # soft grey for roles
+            HDR_COL      = (255, 153, 0)
+            NAME_COL     = (255, 255, 255) 
+            ROLE_COL     = (180, 185, 200) 
             DIVIDER_COL  = (60, 65, 80)
 
-            # ── Credit data ─────────────────────────────────────────────────
+            # credit data 
             # Each item is either:
             #   ("HEADER", "Section Title")       – centred section heading
             #   ("ENTRY",  "Name", "Role")        – two-column name | role
@@ -633,8 +749,8 @@ def main():
             #   ("CENTER", "text", color)         – centred one-liner
             CREDIT_DATA = [
                 ("SPACER", 40),
-                ("HEADER", "BRAINROT BIRDIE"),
-                ("CENTER", "A Brainrot-themed endless flyer", ROLE_COL),
+                ("HEADER", "TAPPY PLANE"),
+                # ("CENTER", "A Brainrot-themed endless flyer", ROLE_COL),
                 ("SPACER", 36),
 
                 ("HEADER", "Created By"),
@@ -669,15 +785,14 @@ def main():
                 ("SPACER", 80),
             ]
 
-            # ── Layout constants ─────────────────────────────────────────────
             MID          = WIDTH // 2
-            NAME_RIGHT   = MID - 24   # right edge of name column
-            ROLE_LEFT    = MID + 24   # left edge of role column
+            NAME_RIGHT   = MID - 24   
+            ROLE_LEFT    = MID + 24   
             ENTRY_H      = 38
             HDR_H        = 54
 
-            # ── Build content surface (once per state, but simple enough ────
-            #    to rebuild each frame – no caching needed at 60fps)
+            # Build content surface (one per state, but simple enough 
+            #    to rebuild each frame    no caching needed at 60fps)
             total_h = 0
             for item in CREDIT_DATA:
                 if item[0] == "HEADER":
@@ -694,12 +809,10 @@ def main():
 
             for item in CREDIT_DATA:
                 if item[0] == "HEADER":
-                    # Draw a divider line, then the header text
                     pygame.draw.line(content, DIVIDER_COL,
                                      (MID - 260, cy + HDR_H // 2 - 1),
                                      (MID + 260, cy + HDR_H // 2 - 1), 1)
                     hdr_s = fonts["subtitle"].render(item[1], True, HDR_COL)
-                    # White background pill behind header text
                     bg_pad = 18
                     bg_r = pygame.Rect(MID - hdr_s.get_width()//2 - bg_pad,
                                        cy + HDR_H//2 - hdr_s.get_height()//2 - 2,
@@ -746,7 +859,6 @@ def main():
             if sy + view_h > total_h:
                 scroll_surf.blit(content, (0, total_h - sy))
 
-            # Fade top and bottom 60px
             FADE_H = 60
             for i in range(FADE_H):
                 a_top = int(255 * (1 - i / FADE_H))
@@ -758,17 +870,11 @@ def main():
 
             canvas.blit(scroll_surf, (0, SCROLL_TOP))
 
-            # ── Fixed header bar ─────────────────────────────────────────────
             pygame.draw.rect(canvas, BG_COL, (0, 0, WIDTH, SCROLL_TOP))
-            aws_h  = fonts["menu_title"].render("AWS", True, (255, 153, 0))
-            rest_h = fonts["menu_title"].render("CLOUD CLUB — CREDITS", True, WHITE)
-            total_tw = aws_h.get_width() + rest_h.get_width()
-            tx = MID - total_tw // 2
-            canvas.blit(aws_h,  (tx, 14))
-            canvas.blit(rest_h, (tx + aws_h.get_width(), 14))
+            cred_h = fonts["menu_title"].render("CREDITS", True, WHITE)
+            canvas.blit(cred_h, (MID - cred_h.get_width() // 2, SCROLL_TOP // 2 - cred_h.get_height() // 2))
             pygame.draw.line(canvas, DIVIDER_COL, (0, SCROLL_TOP - 1), (WIDTH, SCROLL_TOP - 1), 1)
 
-            # ── Fixed hint bar ───────────────────────────────────────────────
             pygame.draw.rect(canvas, BG_COL, (0, SCROLL_BOTTOM, WIDTH, HEIGHT - SCROLL_BOTTOM))
             hint = fonts["small"].render("Click or press any key to return", True, (90, 100, 120))
             canvas.blit(hint, (MID - hint.get_width()//2, SCROLL_BOTTOM + 8))
@@ -836,6 +942,23 @@ def main():
                 draw_button(canvas,menu_button,"MAIN MENU  [M]",fonts,button_image,mp2)
                 # ht = fonts["small"].render("R = Retry   M = Main Menu",True,PANEL_TEXT); ht.set_alpha(alpha)
                 # canvas.blit(ht,(vis_cx-ht.get_width()//2,panel_rect.bottom-35))
+
+        # menu exit slide animation overlay 
+        if menu_exit_timer >= 0 and menu_exit_surf is not None:
+            progress = min(1.0, menu_exit_timer / MENU_EXIT_MS)
+            ease     = 1 - (1 - progress) ** 3   
+            half_h   = HEIGHT // 2
+            offset   = int(ease * (half_h + 60))
+            if menu_exit_target == "start" or menu_exit_target is None:
+                canvas.blit(background_image, (int(bg_x), 0))
+                canvas.blit(background_image, (int(bg_x) + 1200, 0))
+                canvas.blit(background_image, (int(bg_x) + 2400, 0))
+            else:
+                canvas.fill(BLACK)
+            canvas.blit(menu_exit_surf, (0, -offset),
+                        pygame.Rect(0, 0, WIDTH, half_h))
+            canvas.blit(menu_exit_surf, (0, half_h + offset),
+                        pygame.Rect(0, half_h, WIDTH, HEIGHT - half_h))
 
         _, xo, yo, sw2, sh2 = viewport
         canvas2 = pygame.transform.smoothscale(canvas,(sw2,sh2))
