@@ -53,7 +53,7 @@ def _load_brainrot_words():
                 m = row.get("meaning", "").strip()
                 if w and m:
                     words.append({"word": w, "meaning": m})
-    if not words:   # fallback if CSV missing or empty
+    if not words:   # if dataset not found
         words = [
             {"word": "rizz",   "meaning": "Charisma or ability to attract"},
             {"word": "cap",    "meaning": "A lie or fake"},
@@ -75,7 +75,7 @@ THEMES = {
 }
 PLANE_COLORS = ["Blue", "Green", "Red", "Yellow"]
 
-PIPE_SPACING      = 340   # base — actual spacing is randomised in spawn_pipe()
+PIPE_SPACING      = 340   # base spacig for pipe spawingng
 PIPE_WIDTH        = 90
 GROUND_HEIGHT     = 71
 PLAYABLE_H        = HEIGHT - GROUND_HEIGHT
@@ -112,9 +112,9 @@ def load_plane_frames(color):
 def load_fonts():
     font_path = os.path.join(ASSETS_DIR, "fonts", "PressStart2P-Regular.ttf")
     if not os.path.exists(font_path):
-        # Legacy fallback: old single font.ttf location
+
         font_path = os.path.join(ASSETS_DIR, "font.ttf")
-    # "standard" always uses a clean proportional system font (e.g. footer text)
+
     standard_font = pygame.font.SysFont("segoe ui", 16)
     if os.path.exists(font_path):
         return {
@@ -272,7 +272,6 @@ class Pipe:
         """
         W = self.width
 
-        # --- top half (rock_down — tip points downward) ---
         if self._top_surf is None:
             h = max(1, self.top_height)
             surf = pygame.Surface((W, h), pygame.SRCALPHA)
@@ -283,7 +282,6 @@ class Pipe:
 
                 body_h = h - nat_h
                 if body_h > 0:
-                    # Take a 1px slice near the top (the flat base of the rock)
                     slice_y = min(5, top_image.get_height() - 1)
                     body_sample = top_image.subsurface((0, slice_y, top_image.get_width(), 1))
                     body_sample = pygame.transform.scale(body_sample, (W, body_h))
@@ -297,7 +295,6 @@ class Pipe:
             self._top_surf = surf
             self._top_mask = _build_mask(surf)
 
-        # --- bottom half (rock_up — tip points upward) ---
         if self._bottom_surf is None:
             h = max(1, self.bottom_height)
             surf = pygame.Surface((W, h), pygame.SRCALPHA)
@@ -308,7 +305,6 @@ class Pipe:
 
                 body_h = h - nat_h
                 if body_h > 0:
-                    # Take a 1px slice near the bottom (the flat base of the rock)
                     slice_y = max(0, bottom_image.get_height() - 6)
                     body_sample = bottom_image.subsurface((0, slice_y, bottom_image.get_width(), 1))
                     body_sample = pygame.transform.scale(body_sample, (W, body_h))
@@ -401,7 +397,7 @@ def main():
     global window
     window = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
     pygame.display.set_caption("BrainROT Plane 737")
-    # Set window / taskbar icon
+    # taskbar icon
     _icon_path = os.path.join(ASSETS_DIR, "aws cloud club.png")
     if os.path.exists(_icon_path):
         _icon = pygame.image.load(_icon_path).convert_alpha()
@@ -470,7 +466,7 @@ def main():
     bird       = Bird()
     pipes      = []
     stars      = []
-    puffs      = []   # exhaust puff particles
+    puffs      = []   # remove all the particles (plane poop)
     level_gen  = LevelGenerator()
 
     state            = STATE_MENU
@@ -485,13 +481,13 @@ def main():
     quiz_feedback_timer = 0
     invulnerable_timer  = 0
     game_over_timer     = 0
-    credits_scroll_y    = 0.0   # float for smooth sub-pixel scrolling
+    credits_scroll_y    = 0.0   
 
-    # ── Menu exit slide animation ────────────────────────────────────────────
+    # menu screen exit animatn
     MENU_EXIT_MS    = 380          # total animation duration in ms
     menu_exit_surf  = None         # canvas snapshot captured on click
     menu_exit_timer = -1           # ms elapsed; -1 = inactive
-    menu_exit_target = None        # "start" | "credits"
+    menu_exit_target = None        # "start" 
 
     start_button   = pygame.Rect(WIDTH // 2 - 150, HEIGHT // 2 - 10,  300, 58)
     credits_button = pygame.Rect(WIDTH // 2 - 150, HEIGHT // 2 + 66,  300, 58)
@@ -559,19 +555,18 @@ def main():
     def do_jump():
         """Jump the bird and emit a puff of exhaust smoke."""
         bird.jump()
-        # Spawn 1-2 puff sprites at the plane's tail (left side)
         tail_x = bird.x - 10
         tail_y = bird.y + bird.height // 2
         for _ in range(random.randint(1, 2)):
             img_src = random.choice(puff_imgs)
-            surf    = img_src.copy()   # per-puff copy so alpha is independent
+            surf    = img_src.copy()   
             puffs.append({
                 "surf":      surf,
                 "x":         float(tail_x - surf.get_width() // 2 + random.randint(-6, 6)),
                 "y":         float(tail_y - surf.get_height() // 2 + random.randint(-8, 8)),
                 "timer":     0,
                 "max_timer": random.randint(320, 480),
-                "dx":        random.uniform(-1.8, -0.4),   # drift backward
+                "dx":        random.uniform(-1.8, -0.4),   
             })
 
     def imouse(event): return to_internal(event.pos, get_viewport(window.get_size()))
@@ -721,7 +716,7 @@ def main():
         else:
             pygame.draw.rect(canvas, GREEN, (0, HEIGHT-GROUND_HEIGHT, WIDTH, GROUND_HEIGHT))
 
-        # Draw exhaust puffs behind the bird
+        # Draw exhaust 
         for puff in puffs:
             alpha = max(0, int(255 * (1 - puff["timer"] / puff["max_timer"])))
             puff["surf"].set_alpha(alpha)
@@ -732,14 +727,13 @@ def main():
         if state == STATE_MENU:
             ov = pygame.Surface((WIDTH,HEIGHT),pygame.SRCALPHA); ov.fill((6,10,25,90)); canvas.blit(ov,(0,0))
 
-            # title text
             aws_s  = fonts["logo"].render("AWS CLOUD CLUB", True, AWS_ORANGE)
             game_s = fonts["menu_title"].render("BrainROT Plane 737", True, ORANGE)
-            # Build the full block: logo + AWS text + game title
+
             logo_h     = menu_logo.get_height() + 12 if menu_logo else 0
             total_h    = logo_h + aws_s.get_height() + 14 + game_s.get_height()
             block_top  = start_button.top - total_h - 24
-            # Logo above text
+
             if menu_logo:
                 canvas.blit(menu_logo, (WIDTH // 2 - menu_logo.get_width() // 2, block_top))
             text_top = block_top + logo_h
@@ -865,7 +859,6 @@ def main():
                     content.blit(ts, (MID - ts.get_width()//2, cy + ENTRY_H//2 - ts.get_height()//2))
                     cy += ENTRY_H
 
-            # ── Scroll ───────────────────────────────────────────────────────
             credits_scroll_y += SCROLL_SPEED
             if credits_scroll_y >= total_h:
                 credits_scroll_y = 0.0
