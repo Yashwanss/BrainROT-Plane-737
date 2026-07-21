@@ -607,7 +607,7 @@ def main():
             elif state == STATE_QUIZ and event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_BACKSPACE:
                     typed_text = typed_text[:-1]
-                elif event.key == pygame.K_SPACE:
+                elif event.key == pygame.K_RETURN:
                     if typed_text.strip().lower() == current_word:
                         score += 1; quiz_feedback_text = "CORRECT!"; invulnerable_timer = 1500
                         if score % 5 == 0:
@@ -919,7 +919,7 @@ def main():
             pygame.draw.rect(canvas,NAVY,ib,width=2,border_radius=14)
             ts = fonts["body"].render(typed_text+"|",True,NAVY)
             canvas.blit(ts,(ib.centerx-ts.get_width()//2,ib.centery-ts.get_height()//2-2))
-            pr = fonts["small"].render("Type the word and press SPACE",True,PANEL_TEXT)
+            pr = fonts["small"].render("Type the word and press ENTER/RETURN",True,PANEL_TEXT)
             canvas.blit(pr,(quiz_modal.centerx-pr.get_width()//2,quiz_modal.bottom-45))
 
         elif state == STATE_GAME_OVER:

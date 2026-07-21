@@ -10,6 +10,7 @@ desktop.ini
 venv/
 env/
 ENV/
+bin/
 
 .vscode/
 .idea/
