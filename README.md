@@ -1,3 +1,7 @@
+
+
+
+
 # BrainROT Plane 737
 A boring game
 
@@ -20,5 +24,6 @@ If you prefer using the command line or are not on Windows, you can install the 
    pip install -r requirements.txt
    ```
 
+https://github.com/user-attachments/assets/f020787d-a160-4055-b051-6731f433cda2
 
 
